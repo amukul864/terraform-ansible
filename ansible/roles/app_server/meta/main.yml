@@ -1,0 +1,7 @@
+---
+galaxy_info:
+  author: mukul
+  description: Installs Node.js runtime, deploys app, configures Nginx reverse proxy
+  license: MIT
+  min_ansible_version: "2.10"
+dependencies: []

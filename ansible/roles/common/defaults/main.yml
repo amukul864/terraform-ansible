@@ -1,0 +1,8 @@
+---
+timezone: "Asia/Kolkata"
+base_packages:
+  - curl
+  - unzip
+  - git
+  - htop
+  - awscli

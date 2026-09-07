@@ -1,0 +1,30 @@
+---
+- name: Install fail2ban and unattended-upgrades (Ubuntu)
+  apt:
+    name:
+      - fail2ban
+      - unattended-upgrades
+    state: present
+
+- name: Deploy fail2ban config template (Ubuntu)
+  template:
+    src: fail2ban.local.j2
+    dest: /etc/fail2ban/jail.local
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart fail2ban
+
+- name: Deploy unattended-upgrades template (Ubuntu)
+  template:
+    src: 50unattended-upgrades.j2
+    dest: /etc/apt/apt.conf.d/50unattended-upgrades
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Ensure fail2ban is running and enabled (Ubuntu)
+  service:
+    name: fail2ban
+    state: started
+    enabled: yes

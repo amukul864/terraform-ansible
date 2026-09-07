@@ -1,0 +1,69 @@
+---
+- name: Include OS-specific runtime and package setup tasks
+  include_tasks: "{{ ansible_distribution | lower | replace(' ', '_') }}.yml"
+
+- name: Create service user for application
+  user:
+    name: "{{ app_user }}"
+    system: yes
+    shell: /bin/false
+
+- name: Create application directory structure
+  file:
+    path: "{{ app_dir }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: "0755"
+
+- name: Deploy application code from template
+  template:
+    src: server.js.j2
+    dest: "{{ app_dir }}/server.js"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: "0644"
+  notify: Reload systemd and restart app
+
+- name: Deploy systemd service unit template
+  template:
+    src: app.service.j2
+    dest: /etc/systemd/system/nodeapp.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd and restart app
+
+- name: Ensure application service is enabled and started
+  service:
+    name: nodeapp
+    state: started
+    enabled: yes
+
+- name: Ensure target application directory exists
+  ansible.builtin.file:
+    path: "{{ app_env_file_path | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: Fetch parameter from AWS SSM Parameter Store
+  ansible.builtin.command: >
+    aws ssm get-parameter
+    --name "{{ ssm_parameter_name }}"
+    --with-decryption
+    --region "{{ aws_region }}"
+    --query "Parameter.Value"
+    --output text
+  register: ssm_secret_result
+  changed_when: false
+  no_log: true
+
+- name: Write secret to local .env file
+  ansible.builtin.copy:
+    content: |
+      DB_CONNECTION_STRING="{{ ssm_secret_result.stdout }}"
+    dest: "{{ app_env_file_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true

@@ -1,0 +1,25 @@
+---
+- name: Install fail2ban (Amazon Linux)
+  dnf:
+    name: fail2ban
+    state: present
+
+- name: Deploy fail2ban config template (Amazon Linux)
+  template:
+    src: fail2ban.local.j2
+    dest: /etc/fail2ban/jail.local
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart fail2ban
+
+- name: Enable automatic dnf updates (Amazon Linux)
+  dnf:
+    name: dnf-automatic
+    state: present
+
+- name: Ensure fail2ban is running and enabled (Amazon Linux)
+  service:
+    name: fail2ban
+    state: started
+    enabled: yes

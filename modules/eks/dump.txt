@@ -1,0 +1,466 @@
+
+========================================
+./outputs.tf
+========================================
+output "cluster_name" {
+  value       = aws_eks_cluster.main.name
+  description = "The name of the EKS cluster"
+}
+
+output "cluster_endpoint" {
+  value       = aws_eks_cluster.main.endpoint
+  description = "Endpoint for EKS control plane"
+}
+
+output "cluster_certificate_authority_data" {
+  value       = aws_eks_cluster.main.certificate_authority[0].data
+  description = "Certificate authority data for cluster verification"
+}
+
+output "lb_controller_role_arn" {
+  value = aws_iam_role.lb_controller.arn
+}
+
+output "nginx_lb_security_group_id" {
+  value       = aws_security_group.nginx_lb_ingress.id
+  description = "Security group ID for the nginx-demo NLB ingress"
+}
+
+
+========================================
+./main.tf
+========================================
+resource "aws_security_group" "nginx_lb_ingress" {
+  name        = "${var.environment}-nginx-demo-lb-ingress"
+  description = "Explicit internet ingress for nginx-demo NLB"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.environment}-nginx-demo-lb-ingress"
+  }
+}
+
+resource "aws_security_group_rule" "allow_custom_lb_to_nodes" {
+  type                     = "ingress"
+  from_port                = 80
+  to_port                  = 80
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.nginx_lb_ingress.id
+  security_group_id        = aws_eks_cluster.main.vpc_config[0].cluster_security_group_id
+  description              = "Allow nginx-demo LB security group to reach nodes on port 80"
+}
+
+
+========================================
+./nginx_service.tf
+========================================
+resource "kubernetes_service" "nginx_demo_lb" {
+  metadata {
+    name      = "nginx-demo"
+    namespace = "default"
+    annotations = {
+      "service.beta.kubernetes.io/aws-load-balancer-type"            = "external"
+      "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "ip"
+      "service.beta.kubernetes.io/aws-load-balancer-scheme"          = "internet-facing"
+      "service.beta.kubernetes.io/aws-load-balancer-security-groups" = aws_security_group.nginx_lb_ingress.id
+    }
+  }
+  spec {
+    type = "LoadBalancer"
+    selector = {
+      app = "nginx-demo"
+    }
+    port {
+      port        = 80
+      target_port = 80
+    }
+  }
+
+  depends_on = [
+    helm_release.lb_controller
+  ]
+}
+
+
+========================================
+./cluster.tf
+========================================
+resource "aws_eks_cluster" "main" {
+  name     = var.cluster_name
+  role_arn = aws_iam_role.cluster_role.arn
+  version  = var.eks_version
+
+  vpc_config {
+    subnet_ids              = var.private_subnet_ids
+    endpoint_private_access = true
+    endpoint_public_access  = true # just for local kubectl access
+    public_access_cidrs     = var.public_access_cidrs
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.cluster_policy
+  ]
+}
+
+data "aws_partition" "current" {}
+
+data "tls_certificate" "eks" {
+  url = aws_eks_cluster.main.identity[0].oidc[0].issuer
+}
+
+resource "aws_iam_openid_connect_provider" "eks" {
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = [data.tls_certificate.eks.certificates[0].sha1_fingerprint]
+  url             = aws_eks_cluster.main.identity[0].oidc[0].issuer
+}
+
+resource "aws_eks_node_group" "main" {
+  cluster_name    = aws_eks_cluster.main.name
+  node_group_name = "${var.environment}-managed-node-group"
+  node_role_arn   = aws_iam_role.node_group_role.arn
+  subnet_ids      = var.private_subnet_ids
+
+  instance_types = [var.node_instance_type]
+
+  scaling_config {
+    desired_size = var.desired_node_count
+    min_size     = var.desired_node_count
+    max_size     = var.desired_node_count + 1
+  }
+
+  update_config {
+    max_unavailable = 1
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.worker_node_policy,
+    aws_iam_role_policy_attachment.cni_policy,
+    aws_iam_role_policy_attachment.ecr_read_only,
+  ]
+}
+
+
+========================================
+./variables.tf
+========================================
+variable "environment" {
+  description = "Environment name (e.g. dev, prod)"
+  type        = string
+  default     = "dev"
+}
+
+variable "cluster_name" {
+  description = "Name of the EKS cluster"
+  type        = string
+  default     = "dev-eks-cluster"
+}
+
+variable "eks_version" {
+  description = "Kubernetes version pinned explicitly"
+  type        = string
+  default     = "1.36"
+}
+
+variable "vpc_id" {
+  description = "VPC ID where the EKS cluster and node group will be deployed"
+  type        = string
+}
+
+variable "private_subnet_ids" {
+  description = "List of private subnet IDs for worker nodes and cluster endpoints"
+  type        = list(string)
+}
+
+variable "node_instance_type" {
+  description = "EC2 instance type for node group"
+  type        = string
+  default     = "t3.medium"
+}
+
+variable "desired_node_count" {
+  description = "Desired number of worker nodes"
+  type        = number
+  default     = 2
+}
+
+variable "public_access_cidrs" {
+  type    = list(string)
+  default = ["0.0.0.0/0"]
+}
+
+
+========================================
+./iam.tf
+========================================
+resource "aws_iam_role" "cluster_role" {
+  name = "${var.environment}-eks-cluster-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "eks.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "cluster_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+  role       = aws_iam_role.cluster_role.name
+}
+
+resource "aws_iam_role" "node_group_role" {
+  name = "${var.environment}-eks-node-group-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "worker_node_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+  role       = aws_iam_role.node_group_role.name
+}
+
+resource "aws_iam_role_policy_attachment" "cni_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+  role       = aws_iam_role.node_group_role.name
+}
+
+resource "aws_iam_role_policy_attachment" "ecr_read_only" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+  role       = aws_iam_role.node_group_role.name
+}
+
+data "aws_iam_policy_document" "lb_controller_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_openid_connect_provider.eks.arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(aws_iam_openid_connect_provider.eks.url, "https://", "")}:sub"
+      values   = ["system:serviceaccount:kube-system:aws-load-balancer-controller"]
+    }
+  }
+}
+
+resource "aws_iam_role" "lb_controller" {
+  name               = "${var.environment}-eks-lb-controller-role"
+  assume_role_policy = data.aws_iam_policy_document.lb_controller_assume.json
+}
+
+resource "aws_iam_policy" "lb_controller" {
+  name   = "${var.environment}-AWSLoadBalancerControllerIAMPolicy"
+  policy = file("${path.module}/iam-policy-lb-controller.json")
+}
+
+resource "aws_iam_role_policy_attachment" "lb_controller" {
+  role       = aws_iam_role.lb_controller.name
+  policy_arn = aws_iam_policy.lb_controller.arn
+}
+
+
+========================================
+./manifests/nginx-deployment.yml
+========================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-demo
+  namespace: default
+  labels:
+    app: nginx-demo
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx-demo
+  template:
+    metadata:
+      labels:
+        app: nginx-demo
+    spec:
+      initContainers:
+        - name: render-html
+          image: nginx:1.27-alpine
+          command:
+            - sh
+            - -c
+            - envsubst < /template/index.html.template > /rendered/index.html
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: html-template
+              mountPath: /template
+            - name: rendered-html
+              mountPath: /rendered
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: rendered-html
+              mountPath: /usr/share/nginx/html
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: html-template
+          configMap:
+            name: nginx-demo-html
+        - name: rendered-html
+          emptyDir: {}
+
+========================================
+./manifests/nginx-service-clusterip.yml
+========================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-demo
+  namespace: default
+spec:
+  type: ClusterIP
+  selector:
+    app: nginx-demo
+  ports:
+    - port: 80
+      targetPort: 80
+
+
+========================================
+./manifests/nginx-service-lb.yml
+========================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-demo
+  namespace: default
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "external"
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+    service.beta.kubernetes.io/aws-load-balancer-security-groups: "sg-003bf308831e1c6fa"
+spec:
+  type: LoadBalancer
+  selector:
+    app: nginx-demo
+  ports:
+    - port: 80
+      targetPort: 80
+
+
+========================================
+./manifests/nginx-configmap.yml
+========================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-demo-html
+  namespace: default
+data:
+  index.html.template: |
+    <!DOCTYPE html>
+    <html>
+    <head><title>EKS Nginx Demo</title></head>
+    <body style="font-family: sans-serif; text-align: center; margin-top: 100px;">
+      <h1>Hello from EKS</h1>
+      <p><strong>Served by pod:</strong> ${POD_NAME}</p>
+      <p><strong>Node:</strong> ${NODE_NAME}</p>
+    </body>
+    </html>
+
+
+========================================
+./lb_controller.tf
+========================================
+resource "helm_release" "lb_controller" {
+  name       = "aws-load-balancer-controller"
+  repository = "https://aws.github.io/eks-charts"
+  chart      = "aws-load-balancer-controller"
+  namespace  = "kube-system"
+
+  set = [
+    {
+      name  = "clusterName"
+      value = aws_eks_cluster.main.name
+    },
+    {
+      name  = "serviceAccount.create"
+      value = "true"
+    },
+    {
+      name  = "serviceAccount.name"
+      value = "aws-load-balancer-controller"
+    },
+    {
+      name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+      value = aws_iam_role.lb_controller.arn
+    },
+    {
+      name  = "region"
+      value = data.aws_region.current.region
+    },
+    {
+      name  = "vpcId"
+      value = var.vpc_id
+    }
+  ]
+
+  depends_on = [
+    aws_eks_node_group.main,
+    aws_iam_role_policy_attachment.lb_controller
+  ]
+}
+
+data "aws_region" "current" {}
+

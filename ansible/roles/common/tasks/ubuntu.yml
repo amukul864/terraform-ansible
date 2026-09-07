@@ -1,0 +1,10 @@
+---
+- name: Update apt cache and upgrade packages (Ubuntu)
+  ansible.builtin.apt:
+    update_cache: yes
+    upgrade: dist
+
+- name: Install base tools (Ubuntu)
+  ansible.builtin.apt:
+    name: "{{ base_packages }}"
+    state: present

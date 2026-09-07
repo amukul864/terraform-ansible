@@ -1,0 +1,157 @@
+{
+  "alb": {
+    "sensitive": false,
+    "type": [
+      "object",
+      {
+        "al2023_target_group_arn": "string",
+        "alb_dns_name": "string",
+        "alb_public_url": "string",
+        "alb_security_group_id": "string",
+        "ubuntu_target_group_arn": "string"
+      }
+    ],
+    "value": {
+      "al2023_target_group_arn": "arn:aws:elasticloadbalancing:ap-south-1:042729245905:targetgroup/dev-al2023-tg/dccafe1e5c8873be",
+      "alb_dns_name": "dev-alb-452925610.ap-south-1.elb.amazonaws.com",
+      "alb_public_url": "http://dev-alb-452925610.ap-south-1.elb.amazonaws.com",
+      "alb_security_group_id": "sg-0206d5593b5976ac7",
+      "ubuntu_target_group_arn": "arn:aws:elasticloadbalancing:ap-south-1:042729245905:targetgroup/dev-ubuntu-tg/5a1655ff8c883f87"
+    }
+  },
+  "bastion": {
+    "sensitive": false,
+    "type": [
+      "object",
+      {
+        "bastion_public_ip": "string",
+        "bastion_security_group_id": "string"
+      }
+    ],
+    "value": {
+      "bastion_public_ip": "52.66.171.189",
+      "bastion_security_group_id": "sg-03f16a98f351fab39"
+    }
+  },
+  "compute": {
+    "sensitive": false,
+    "type": [
+      "object",
+      {
+        "al2023": [
+          "object",
+          {
+            "app_security_group_id": "string",
+            "asg_arn": "string",
+            "asg_id": "string",
+            "asg_name": "string",
+            "capacity": "string",
+            "key_pair_name": "string",
+            "launch_template_id": "string",
+            "launch_template_latest_version": "number"
+          }
+        ],
+        "ubuntu": [
+          "object",
+          {
+            "app_security_group_id": "string",
+            "asg_arn": "string",
+            "asg_id": "string",
+            "asg_name": "string",
+            "capacity": "string",
+            "key_pair_name": "string",
+            "launch_template_id": "string",
+            "launch_template_latest_version": "number"
+          }
+        ]
+      }
+    ],
+    "value": {
+      "al2023": {
+        "app_security_group_id": "sg-056216cbf479e6516",
+        "asg_arn": "arn:aws:autoscaling:ap-south-1:042729245905:autoScalingGroup:7b23c802-5e50-4a89-a132-0f641520ee0a:autoScalingGroupName/dev-al2023-asg-66bcc5cdca8572e74f4ee64a21",
+        "asg_id": "dev-al2023-asg-66bcc5cdca8572e74f4ee64a21",
+        "asg_name": "dev-al2023-asg-66bcc5cdca8572e74f4ee64a21",
+        "capacity": "1-3-1",
+        "key_pair_name": "dev-al2023-key",
+        "launch_template_id": "lt-0a65ca66a7addf12d",
+        "launch_template_latest_version": 1
+      },
+      "ubuntu": {
+        "app_security_group_id": "sg-07547de63feba80a7",
+        "asg_arn": "arn:aws:autoscaling:ap-south-1:042729245905:autoScalingGroup:b5705cef-a0c1-4d48-a013-038d0683f706:autoScalingGroupName/dev-ubuntu-asg-25ef6d283d972eeddaed656c60",
+        "asg_id": "dev-ubuntu-asg-25ef6d283d972eeddaed656c60",
+        "asg_name": "dev-ubuntu-asg-25ef6d283d972eeddaed656c60",
+        "capacity": "1-3-1",
+        "key_pair_name": "dev-ubuntu-key",
+        "launch_template_id": "lt-0319d8ff8cd13759b",
+        "launch_template_latest_version": 1
+      }
+    }
+  },
+  "secrets": {
+    "sensitive": false,
+    "type": [
+      "object",
+      {
+        "kms_key_arn": "string",
+        "kms_key_id": "string",
+        "ssm_parameter_arn": "string",
+        "ssm_parameter_name": "string"
+      }
+    ],
+    "value": {
+      "kms_key_arn": "arn:aws:kms:ap-south-1:042729245905:key/65189e6c-f4cc-4c2f-bca5-9677ad793193",
+      "kms_key_id": "65189e6c-f4cc-4c2f-bca5-9677ad793193",
+      "ssm_parameter_arn": "arn:aws:ssm:ap-south-1:042729245905:parameter/dev/app/db_connection_string",
+      "ssm_parameter_name": "/dev/app/db_connection_string"
+    }
+  },
+  "vpc": {
+    "sensitive": false,
+    "type": [
+      "object",
+      {
+        "nat_gateway_ips": [
+          "tuple",
+          [
+            "string"
+          ]
+        ],
+        "private_subnet_ids": [
+          "tuple",
+          [
+            "string",
+            "string",
+            "string"
+          ]
+        ],
+        "public_subnet_ids": [
+          "tuple",
+          [
+            "string",
+            "string",
+            "string"
+          ]
+        ],
+        "vpc_id": "string"
+      }
+    ],
+    "value": {
+      "nat_gateway_ips": [
+        "65.2.212.252"
+      ],
+      "private_subnet_ids": [
+        "subnet-082e00b85f61ce183",
+        "subnet-0004a19b35e901597",
+        "subnet-04378dee92bcf8399"
+      ],
+      "public_subnet_ids": [
+        "subnet-0621c2c1244049738",
+        "subnet-0a8dcb399c25a1ef7",
+        "subnet-07fa489b6cbd7f3e4"
+      ],
+      "vpc_id": "vpc-0200cb0f4674e080d"
+    }
+  }
+}

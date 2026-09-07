@@ -1,0 +1,18 @@
+---
+- name: Configure App Servers
+  hosts: app_servers
+  gather_facts: true
+  become: true
+
+  tasks:
+    - name: Ping host to verify connection
+      ansible.builtin.ping:
+
+    - name: Print OS distribution details and hostname
+      ansible.builtin.debug:
+        msg: "Host: {{ inventory_hostname }} (System Hostname: {{ ansible_hostname }}) is running {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+  roles:
+    - role: common
+    - role: security_hardening
+    - role: app_server

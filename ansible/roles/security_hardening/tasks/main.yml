@@ -1,0 +1,17 @@
+---
+- name: Harden SSH daemon (patch specific directives, preserve OS defaults)
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+    validate: "/usr/sbin/sshd -t -f %s"
+  loop:
+    - { regexp: '^#?PermitRootLogin', line: "PermitRootLogin {{ sshd_permit_root_login }}" }
+    - { regexp: '^#?PasswordAuthentication', line: "PasswordAuthentication {{ sshd_disable_password_auth }}" }
+    - { regexp: '^#?PubkeyAuthentication', line: "PubkeyAuthentication yes" }
+  notify:
+    - Restart ssh service (Ubuntu)
+    - Restart sshd service (Amazon Linux)
+
+- name: Include OS-specific security hardening tasks
+  include_tasks: "{{ ansible_distribution | lower | replace(' ', '_') }}.yml"

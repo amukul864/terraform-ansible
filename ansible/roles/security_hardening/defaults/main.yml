@@ -1,0 +1,6 @@
+---
+sshd_disable_password_auth: "no"
+sshd_permit_root_login: "no"
+fail2ban_maxretry: 5
+fail2ban_bantime: 3600
+fail2ban_findtime: 600

@@ -1,0 +1,11 @@
+---
+- name: Update dnf packages (Amazon Linux)
+  ansible.builtin.dnf:
+    name: "*"
+    state: latest
+
+- name: Install base tools (Amazon Linux)
+  ansible.builtin.dnf:
+    name: "{{ base_packages }}"
+    state: present
+    allowerasing: true

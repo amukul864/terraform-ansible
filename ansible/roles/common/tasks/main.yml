@@ -1,0 +1,12 @@
+---
+- name: Set system timezone from template
+  template:
+    src: timezone.j2
+    dest: /etc/timezone
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Update timezone link
+
+- name: Include OS-specific package tasks
+  include_tasks: "{{ ansible_distribution | lower | replace(' ', '_') }}.yml"
