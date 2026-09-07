@@ -129,3 +129,4 @@ Sensitive values are never stored in plaintext in the repo:
 
 - EKS Kubernetes version and node instance types are pinned explicitly in `modules/eks/variables.tf` rather than using `latest`.
 - Each environment under `environments/<env>/` is a self-contained Terraform root module with its own `provider.tf`, `backend.tf`, `main.tf`, and `outputs.tf`.
+ 
