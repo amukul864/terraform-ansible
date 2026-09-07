@@ -29,34 +29,21 @@ Terraform + Ansible based AWS infrastructure platform provisioning networking, c
 │       └── app_server/           # Node.js app + Nginx reverse proxy
 ├── global/
 │   └── backend-bootstrap/     # One-time S3 + DynamoDB backend setup
-├── scripts/
-│   ├── wait_for_instances.sh   # Polls EC2 instance status checks
-│   └── run_ansible.sh           # Runs Ansible playbook against dynamic inventory
-└── buildspecs/                 # (planned) CI/CD build specs
+└── scripts/
+    ├── wait_for_instances.sh   # Polls EC2 instance status checks
+    └── run_ansible.sh           # Runs Ansible playbook against dynamic inventory
 ```
 
 ## Architecture Overview
 
 - **Networking**: A VPC per environment with public and private subnets spread across Availability Zones, an Internet Gateway, and either a single shared NAT Gateway or one per AZ (`nat_strategy` variable).
-- **Compute**: Auto Scaling Groups launch EC2 instances (Amazon Linux 2023 and Ubuntu pools in dev) behind an Application Load Balancer, using per-environment instance type/count/sizing maps.
+- **Compute**: Auto Scaling Groups launch EC2 instances (Amazon Linux 2023 and Ubuntu pools) behind an Application Load Balancer, using per-environment instance type/count/sizing maps.
 - **Kubernetes (EKS)**: A managed EKS cluster with a managed node group, OIDC provider for IRSA, the AWS Load Balancer Controller (via Helm), and a demo Nginx deployment exposed through a Network Load Balancer.
 - **Secrets**: A per-environment KMS key encrypts an SSM `SecureString` parameter (e.g. DB connection string), with a least-privilege IAM policy scoped to that specific parameter and key.
-- **Bastion**: An optional public bastion host is used for SSH access into private-subnet instances.
+- **Bastion**: A public bastion host is used for SSH access into private-subnet instances.
 - **Monitoring**: CloudWatch alarms on ASG CPU utilization publish to an SNS topic with an email subscription.
 - **Configuration Management**: Ansible, driven by a dynamic `aws_ec2` inventory plugin, applies `common`, `security_hardening`, and `app_server` roles to tagged EC2 instances. Instances are provisioned automatically post-`terraform apply` via a `null_resource` + `local-exec` provisioner chain (`wait_for_instances.sh` → `run_ansible.sh`).
 - **State Management**: Terraform state is stored remotely in S3 (versioned, encrypted) with DynamoDB-based state locking, bootstrapped once via `global/backend-bootstrap`.
-
-## Environments
-
-Each environment under `environments/<env>/` is a self-contained Terraform root module with its own `provider.tf`, `backend.tf`, `main.tf`, and `outputs.tf`. Environments currently differ in which modules are enabled:
-
-| Environment | Networking | EKS | Compute ASG / ALB / Bastion / Secrets / Monitoring |
-|---|---|---|---|
-| `dev` | ✅ | ✅ | Present in `main.tf` but currently commented out |
-| `staging` | Provider/backend scaffolded | — | — |
-| `prod` | Provider/backend scaffolded | — | — |
-
-The `dev` environment's `main.tf` retains commented-out module blocks for `bastion`, `ansible_config`, `alb`, `compute` (ASG pools), `ansible_provisioner`, `secrets`, and `monitoring` — these were previously deployed (see `output.json` for a snapshot of that state) and can be re-enabled by uncommenting.
 
 ## Prerequisites
 
@@ -86,11 +73,11 @@ terraform plan
 terraform apply
 ```
 
-This provisions the VPC (`modules/networking`) and EKS cluster (`modules/eks`). If the commented-out modules in `main.tf` are re-enabled, it will also provision a bastion host, ALB, ASG-based compute pools, secrets, and monitoring.
+This provisions the VPC, bastion host, ALB, ASG-based compute pools, EKS cluster, secrets, and monitoring for the environment.
 
 ### 3. Configure instances with Ansible
 
-If EC2-based compute (`compute-asg`) is enabled, instances are configured automatically via the `ansible_provisioner` module after `terraform apply`. This can also be run manually:
+Instances are configured automatically via the `ansible_provisioner` module after `terraform apply`. This can also be run manually:
 
 ```bash
 export ENV_TAG=dev
@@ -112,17 +99,17 @@ The demo Nginx deployment and its LoadBalancer service manifests live under `mod
 
 ## Module Reference
 
-| Module | Purpose | Key Inputs |
-|---|---|---|
-| `modules/networking` | VPC, public/private subnets, IGW, NAT Gateway(s), route tables | `cidr_block`, `az_count`, `nat_strategy` |
-| `modules/compute-asg` | Launch template, ASG with target-tracking scaling, app security group, IAM instance role | `env_name`, `role`, `ami_id`, `vpc_id`, `private_subnet_ids`, `alb_security_group_id` |
-| `modules/alb` | ALB, security group, weighted target groups (AL2023 / Ubuntu), HTTP listener | `env_name`, `vpc_id`, `public_subnet_ids` |
-| `modules/bastion` | Public bastion EC2 instance for SSH access | `env_name`, `vpc_id`, `public_subnet_id` |
-| `modules/eks` | EKS cluster, managed node group, OIDC provider, AWS Load Balancer Controller (Helm), demo Nginx service | `environment`, `cluster_name`, `vpc_id`, `private_subnet_ids`, `node_instance_type` |
-| `modules/secrets` | KMS key + SSM SecureString parameter with scoped read IAM policy | `environment`, `iam_role_names` |
-| `modules/monitoring` | CloudWatch CPU alarms + SNS topic/subscription | `environment`, `asg_names`, `alert_email`, `cpu_threshold` |
-| `modules/ansible-config` | Generates `ansible.cfg` and dynamic inventory file for bastion-proxied SSH | `env_name`, `bastion_public_ip`, `region` |
-| `modules/ansible_provisioner` | Runs post-apply provisioning scripts via `local-exec` | `aws_region`, `environment`, `ansible_dir` |
+| Module                        | Purpose                                                                                                 | Key Inputs                                                                            |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `modules/networking`          | VPC, public/private subnets, IGW, NAT Gateway(s), route tables                                          | `cidr_block`, `az_count`, `nat_strategy`                                              |
+| `modules/compute-asg`         | Launch template, ASG with target-tracking scaling, app security group, IAM instance role                | `env_name`, `role`, `ami_id`, `vpc_id`, `private_subnet_ids`, `alb_security_group_id` |
+| `modules/alb`                 | ALB, security group, weighted target groups (AL2023 / Ubuntu), HTTP listener                            | `env_name`, `vpc_id`, `public_subnet_ids`                                             |
+| `modules/bastion`             | Public bastion EC2 instance for SSH access                                                              | `env_name`, `vpc_id`, `public_subnet_id`                                              |
+| `modules/eks`                 | EKS cluster, managed node group, OIDC provider, AWS Load Balancer Controller (Helm), demo Nginx service | `environment`, `cluster_name`, `vpc_id`, `private_subnet_ids`, `node_instance_type`   |
+| `modules/secrets`             | KMS key + SSM SecureString parameter with scoped read IAM policy                                        | `environment`, `iam_role_names`                                                       |
+| `modules/monitoring`          | CloudWatch CPU alarms + SNS topic/subscription                                                          | `environment`, `asg_names`, `alert_email`, `cpu_threshold`                            |
+| `modules/ansible-config`      | Generates `ansible.cfg` and dynamic inventory file for bastion-proxied SSH                              | `env_name`, `bastion_public_ip`, `region`                                             |
+| `modules/ansible_provisioner` | Runs post-apply provisioning scripts via `local-exec`                                                   | `aws_region`, `environment`, `ansible_dir`                                            |
 
 ## Ansible Roles
 
@@ -140,6 +127,5 @@ Sensitive values are never stored in plaintext in the repo:
 
 ## Notes
 
-- `environments/dev/output.json` is a point-in-time snapshot of Terraform outputs from a previous full deployment (including ASG, ALB, bastion, and secrets modules) and does not necessarily reflect the current (partially commented-out) state of `main.tf`.
 - EKS Kubernetes version and node instance types are pinned explicitly in `modules/eks/variables.tf` rather than using `latest`.
-- The `staging` and `prod` environments currently only have `provider.tf` and `backend.tf` scaffolded and need their `main.tf`/`outputs.tf` added, mirroring `dev`.
+- Each environment under `environments/<env>/` is a self-contained Terraform root module with its own `provider.tf`, `backend.tf`, `main.tf`, and `outputs.tf`.
